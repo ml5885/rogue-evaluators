@@ -17,7 +17,8 @@ load_env('.env')
 
 def main():
     # test_preference_dataset()
-    test_models()
+    # test_models()
+    test_ppo()
 
 if __name__ == "__main__":
     main()
