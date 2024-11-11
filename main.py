@@ -16,9 +16,8 @@ def load_env(env_file):
 load_env('.env')
 
 def main():
-    # test_preference_dataset_shp()
-    # test_policy_model_forward()
-    test_reward_model_forward()
+    # test_preference_dataset()
+    test_models()
 
 if __name__ == "__main__":
     main()

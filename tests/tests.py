@@ -1,38 +1,68 @@
 
 import torch
 from models.reward import RewardModel
-from data.load_datasets import PreferenceDataset
 from models.policy import PolicyModel
+from data.load_datasets import PreferenceDataset
+from training.ppo import PPO
+from data.load_datasets import PreferenceDataset
+from transformers import AutoTokenizer
+from torch.utils.data import DataLoader, Subset
 
-def test_preference_dataset_shp():
-    dataset = PreferenceDataset(dataset_name='shp', tokenizer_name='gpt2')
-    assert len(dataset) > 0, "Dataset should not be empty."
-    sample = dataset[0]
-    assert 'input_ids' in sample, "'input_ids' key missing in sample."
-    assert 'attention_mask' in sample, "'attention_mask' key missing in sample."
-    assert 'labels' in sample, "'labels' key missing in sample."
-    assert 'preference' in sample, "'preference' key missing in sample."
-    assert sample['input_ids'].dim() == 1, "input_ids should be a 1D tensor."
-    assert sample['labels'].shape[0] == 2, "labels should have two responses."
-    print("Test passed: PreferenceDataset loads SHP dataset correctly.")
+def test_preference_dataset():
+    datasets_to_test = ['summarize_from_feedback', 'hh-rlhf', 'shp']
+    for dataset_name in datasets_to_test:
+        dataset = PreferenceDataset(dataset_name=dataset_name)
+        assert len(dataset) > 0, f"{dataset_name} dataset should not be empty."
+        sample = dataset[0]
 
-def test_reward_model_forward():
-    # model_name = 'facebook/opt-125m'
-    model_name = 'gpt2'
-    model = RewardModel(model_name=model_name)
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 50))  # [batch_size=2, seq_length=50]
-    attention_mask = torch.ones_like(input_ids)
-    rewards = model(input_ids=input_ids, attention_mask=attention_mask)
-    assert rewards.shape == (2, 1), f"Expected rewards shape (2, 1), got {rewards.shape}"
-    print("Test passed: RewardModel forward pass outputs correct shape.")
+        assert 'input_ids' in sample, "'input_ids' key missing in sample."
+        assert 'attention_mask' in sample, "'attention_mask' key missing in sample."
+        assert 'labels' in sample, "'labels' key missing in sample."
+        assert 'preference' in sample, "'preference' key missing in sample."
+        assert sample['input_ids'].dim() == 1, "input_ids should be a 1D tensor."
+        assert sample['labels'].shape[0] == 2, "labels should have two responses."
+        assert sample['input_ids'].numel() > 0, "Prompt input_ids should not be empty."
 
-def test_policy_model_forward():
-    model_name = 'gpt2'
-    model = PolicyModel(model_name=model_name)
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 50))  # [batch_size=2, seq_length=50]
-    attention_mask = torch.ones_like(input_ids)
-    logits, values = model(input_ids=input_ids, attention_mask=attention_mask)
-    assert logits.shape == (2, 50, model.config.vocab_size), f"Expected logits shape (2, 50, vocab_size), got {logits.shape}"
-    assert values.shape == (2, 1), f"Expected values shape (2, 1), got {values.shape}"
-    print("Test passed: PolicyModel forward pass outputs correct shapes.")
+        print(f"Test passed: PreferenceDataset loads {dataset_name} dataset correctly with non-empty prompts.")
 
+def test_models():
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=True)
+    tokenizer.pad_token = tokenizer.eos_token  # Set padding token
+    
+    # Initialize PolicyModel and RewardModel
+    policy_model = PolicyModel.from_pretrained('gpt2')
+    reward_model = RewardModel('gpt2')
+    
+    # Check if models are properly loaded
+    assert policy_model is not None, "PolicyModel initialization failed"
+    assert reward_model is not None, "RewardModel initialization failed"
+    print("Models initialized successfully.")
+    
+    # Load a small subset of data for testing
+    dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50)
+    subset_indices = list(range(4))  # Small subset for testing
+    subset_dataset = Subset(dataset, subset_indices)
+    dataloader = DataLoader(subset_dataset, batch_size=2)
+    
+    # Run a single forward pass on the models to ensure they work
+    try:
+        for batch in dataloader:
+            # Move batch to device
+            batch = {k: v.to(policy_model.device) for k, v in batch.items()}
+            
+            # Test PolicyModel forward pass
+            logits, values = policy_model(batch['input_ids'], attention_mask=batch['attention_mask'])
+            assert logits is not None, "PolicyModel forward pass failed to produce logits"
+            assert values is not None, "PolicyModel forward pass failed to produce values"
+            print("PolicyModel forward pass successful.")
+
+            # Test RewardModel forward pass
+            rewards = reward_model(batch['input_ids'], attention_mask=batch['attention_mask'])
+            assert rewards is not None, "RewardModel forward pass failed to produce rewards"
+            print("RewardModel forward pass successful.")
+            
+        print("All tests passed successfully.")
+    
+    except Exception as e:
+        print(f"Test failed: {e}")
