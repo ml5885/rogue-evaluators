@@ -4,10 +4,11 @@ from models.reward import RewardModel
 from models.policy import PolicyModel
 from data.load_datasets import PreferenceDataset
 from training.ppo import PPO
+from training.dpo import DPO
 from data.load_datasets import PreferenceDataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader, Subset
-from eval import evaluate_model
+import eval
 
 def test_preference_dataset():
     datasets_to_test = ['summarize_from_feedback', 'hh-rlhf', 'shp']
@@ -107,7 +108,45 @@ def test_ppo():
         return
 
     try:
-        avg_reward, preference_accuracy = evaluate_model(trained_policy_model, trained_reward_model, test_dataloader, tokenizer, policy_model.device)
+        avg_reward, preference_accuracy = eval.evaluate_model(trained_policy_model, trained_reward_model, test_dataloader, tokenizer, policy_model.device)
         print(f"Evaluation Results - Reward Evaluation: {avg_reward:.4f}, Preference Accuracy: {preference_accuracy:.4f}")
+    except Exception as e:
+        print(f"Evaluation failed with exception: {e}")
+
+def test_dpo():
+    config = {
+        'lr': 1e-5,
+        'epochs': 1,
+        'batch_size': 2,
+        'beta': 0.1,
+        'max_grad_norm': 0.5,
+    }
+
+    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=True)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    policy_model = PolicyModel.from_pretrained('gpt2')
+    reward_model = RewardModel('gpt2')
+    dpo_trainer = DPO(policy_model, reward_model, tokenizer, config)
+
+    train_dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50, split='train')
+    subset_indices = list(range(4))
+    train_subset = Subset(train_dataset, subset_indices)
+    train_dataloader = DataLoader(train_subset, batch_size=config['batch_size'], shuffle=True)
+
+    test_dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50, split='test')
+    test_subset = Subset(test_dataset, subset_indices)
+    test_dataloader = DataLoader(test_subset, batch_size=config['batch_size'], shuffle=False)
+
+    try:
+        trained_policy_model = dpo_trainer.train(train_dataloader)
+        print("Training completed successfully.")
+    except Exception as e:
+        print(f"Training failed with exception: {e}")
+        return
+
+    try:
+        preference_accuracy = eval.evaluate_dpo_preference_accuracy(trained_policy_model, test_dataloader, tokenizer, policy_model.device)
+        print(f"Evaluation Results - Preference Accuracy: {preference_accuracy:.4f}")
     except Exception as e:
         print(f"Evaluation failed with exception: {e}")

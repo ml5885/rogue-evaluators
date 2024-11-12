@@ -1,5 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
+from training.logger import setup_logger
+
+logger = setup_logger('evaluation.log')
 
 def evaluate_reward_model(reward_model, test_dataloader, tokenizer, device):
     """
