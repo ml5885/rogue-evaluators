@@ -7,6 +7,7 @@ from training.ppo import PPO
 from data.load_datasets import PreferenceDataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader, Subset
+from eval import evaluate_model
 
 def test_preference_dataset():
     datasets_to_test = ['summarize_from_feedback', 'hh-rlhf', 'shp']
@@ -83,22 +84,30 @@ def test_ppo():
     }
 
     tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=True)
-    tokenizer.pad_token = tokenizer.eos_token  # Set padding token
+    tokenizer.pad_token = tokenizer.eos_token
 
     policy_model = PolicyModel.from_pretrained('gpt2')
     reward_model = RewardModel('gpt2')
     ppo_trainer = PPO(policy_model, reward_model, tokenizer, config)
 
-    # Load a small subset of data for testing
-    dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50)
-    subset_indices = list(range(4))  # Small subset for testing
-    subset_dataset = Subset(dataset, subset_indices)
-    dataloader = DataLoader(subset_dataset, batch_size=config['batch_size'])
+    train_dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50, split='train')
+    subset_indices = list(range(4))
+    train_subset = Subset(train_dataset, subset_indices)
+    train_dataloader = DataLoader(train_subset, batch_size=config['batch_size'], shuffle=True)
 
-    # Run a single training step
+    test_dataset = PreferenceDataset('shp', tokenizer_name='gpt2', max_length=50, split='test')
+    test_subset = Subset(test_dataset, subset_indices)
+    test_dataloader = DataLoader(test_subset, batch_size=config['batch_size'], shuffle=False)
+
     try:
-        print("Running PPO training step...")
-        ppo_trainer.train(dataloader)
-        print("Test passed: PPO train method runs without errors.")
+        trained_policy_model, trained_reward_model = ppo_trainer.train(train_dataloader)
+        print("Training completed successfully.")
     except Exception as e:
-        print(f"Test failed: PPO train method raised an exception: {e}")
+        print(f"Training failed with exception: {e}")
+        return
+
+    try:
+        avg_reward, preference_accuracy = evaluate_model(trained_policy_model, trained_reward_model, test_dataloader, tokenizer, policy_model.device)
+        print(f"Evaluation Results - Reward Evaluation: {avg_reward:.4f}, Preference Accuracy: {preference_accuracy:.4f}")
+    except Exception as e:
+        print(f"Evaluation failed with exception: {e}")

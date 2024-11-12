@@ -4,7 +4,16 @@ from transformers import AutoTokenizer
 import datasets
 
 class PreferenceDataset(Dataset):
-    def __init__(self, dataset_name, tokenizer_name='gpt2', max_length=512):
+    def __init__(self, dataset_name, tokenizer_name='gpt2', max_length=512, split='train'):
+        """
+        Initialize the PreferenceDataset.
+
+        Args:
+            dataset_name (str): Name of the dataset.
+            tokenizer_name (str): Name of the tokenizer model.
+            max_length (int): Maximum length for tokenization.
+            split (str): Dataset split to load ('train' or 'test').
+        """
         self.dataset_name = dataset_name.lower()
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         
@@ -12,15 +21,26 @@ class PreferenceDataset(Dataset):
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.max_length = max_length
-        self.dataset = self.load_dataset(self.dataset_name)
+        self.split = split
+        self.dataset = self.load_dataset(self.dataset_name, split)
 
-    def load_dataset(self, dataset_name):
+    def load_dataset(self, dataset_name, split):
+        """
+        Load the specified dataset and split.
+
+        Args:
+            dataset_name (str): Name of the dataset.
+            split (str): Dataset split to load ('train' or 'test').
+
+        Returns:
+            Dataset: Loaded dataset split.
+        """
         if dataset_name == 'summarize_from_feedback':
-            data = datasets.load_dataset('openai/summarize_from_feedback', 'comparisons', split='train')
+            data = datasets.load_dataset('openai/summarize_from_feedback', 'comparisons', split=split)
         elif dataset_name == 'hh-rlhf':
-            data = datasets.load_dataset('Anthropic/hh-rlhf', split='train')
+            data = datasets.load_dataset('Anthropic/hh-rlhf', split=split)
         elif dataset_name == 'shp':
-            data = datasets.load_dataset('stanfordnlp/SHP', split='train')
+            data = datasets.load_dataset('stanfordnlp/SHP', split=split)
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
         return data
@@ -29,6 +49,15 @@ class PreferenceDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
+        """
+        Retrieve a single item from the dataset.
+
+        Args:
+            idx (int): Index of the item.
+
+        Returns:
+            dict: Dictionary containing input_ids, attention_mask, labels, and preference.
+        """
         item = self.dataset[idx]
 
         if self.dataset_name == 'summarize_from_feedback':
